@@ -1,10 +1,7 @@
 //c++ library
 #include <iostream>
-#include <string>
+#include <cstring>
 #include <cstdlib>
-
-//c library
-#include <string.h>
 
 //unix library
 #include <unistd.h>
