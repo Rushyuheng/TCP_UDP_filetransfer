@@ -24,49 +24,47 @@ void showprogress(int percent){
     time_t t = time(NULL);
     struct tm *tm = localtime(&t);
     printf("%d %%",percent);
-    printf(" %s\n", asctime(tm));
+    printf("%s", asctime(tm));
 }
 
 int main(int argc, char const *argv[])
 {
+    int socketd, newsocketd;               // return value when opening new scoket for checking socket construction status
+    char buffer[256];                       // data buffer for reading data
+    struct sockaddr_in serv_addr, cli_addr; //socket structure defined in <netinet/in.h>
+    socklen_t clilen;                       // client length for accept()
+    int portnum,rw_status;
+
+    memset(&serv_addr, 0, sizeof(serv_addr));//clear every byte in struct for intializing serv_addr struct
+
+    portnum = atoi(argv[4]); 
+    serv_addr.sin_family = AF_INET; // config IP form as IPv4
+    serv_addr.sin_addr.s_addr = inet_addr(argv[3]); //config server IP
+    serv_addr.sin_port = htons(portnum); //config server port number
+
     if(strcmp(argv[1], "tcp") == 0){
 
-        int socketd, newsocketd;               // return value when opening new scoket for checking socket construction status
-        char buffer[256];                       // data buffer for reading data
-        struct sockaddr_in serv_addr, cli_addr; //socket structure defined in <netinet/in.h>
-        socklen_t clilen;                       // client length for accept()
-        int portnum,rw_status;
-
-        socketd = socket(AF_INET,SOCK_STREAM,0); // construct socket in IPv4 form with TCP protocol
-
-        memset(&serv_addr, 0, sizeof(serv_addr));//clear every byte in struct for intializing serv_addr struct
-
-        portnum = atoi(argv[4]); 
-        serv_addr.sin_family = AF_INET; // config IP form as IPv4
-        serv_addr.sin_addr.s_addr = inet_addr(argv[3]); //config server IP
-        serv_addr.sin_port = htons(portnum); //config server port number
-
-        if(socketd < 0){
+        socketd = socket(PF_INET,SOCK_STREAM,0); // construct socket in IPv4 form with TCP protocol
+        if(socketd < 0)
             errormsg("fail to open a new socket");
-        }
+
 
         if(strcmp(argv[2], "recv") == 0){ //server side
-            printf("tcp recv\n");
-            if (bind(socketd, (struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0){// bind socket and server
+            printf("tcp recv mode\n");
+            if (bind(socketd, (struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0)// bind socket and server
                 errormsg("fail to bind socket and server address");
-            } 
+
             listen(socketd,5); // set server socket to listen mode with max connection queue of 5
             socklen_t clilen = sizeof(cli_addr);
-            newsocketd = accept(socketd,(struct sockaddr *) &cli_addr, &clilen); // accept the first connection request in the queue
-            if(newsocketd < 0){
+            newsocketd = accept(socketd,(struct sockaddr *) &cli_addr, &clilen); // accept the first connection request in the queue and store client info stuct
+            if(newsocketd < 0)
                 errormsg("fail to accept socket from client");
-            }
 
             //----The code we should revise----
             FILE *fp = fopen("recv.txt", "w");
-            if(fp == NULL){
+            if(fp == NULL)
                 errormsg("fail to open write file");
-            }
+
             else{
                 bzero(buffer,256); // clear buffer perpare to recv data from socket
                 int length = 0;
@@ -81,7 +79,7 @@ int main(int argc, char const *argv[])
                         bzero(buffer, 256);//clear buffer for next loop
                 } 
             }
-            printf("file receive complete");
+            printf("file receive complete\n");
 
             // close socket and file pointer
             fclose(fp);
@@ -89,15 +87,14 @@ int main(int argc, char const *argv[])
             close(socketd);
         }
         else if(strcmp(argv[2], "send") == 0){ // client side
-            printf("tcp send\n");
-            if (connect(socketd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0){ //try to connect to server socket
+            printf("tcp send mode\n");
+            if (connect(socketd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) //try to connect to server socket
                 errormsg("fail to connect socket");
-            }
 
             FILE *fp = fopen(argv[5],"r"); //open file and creat file pointer
-            if(fp == NULL){
+            if(fp == NULL)
                 errormsg("fail to open file");
-            }
+            
             else{
                 bzero(buffer,256); // clear buffer
                 int file_block_length = 0;
@@ -118,9 +115,9 @@ int main(int argc, char const *argv[])
                     if (send(socketd, buffer, file_block_length, 0) < 0)// send file to socket
                         errormsg("fail to send file");
                     
-                    sended_block_length += file_block_length;
-                    if(sended_block_length / filesize >= progressindex * 0.25){ //print progress evert 25%
-                        showprogress((int) progressindex * 0.25);
+                    sended_block_length += file_block_length;//accumulate data sent
+                    if(sended_block_length / filesize > progressindex * 0.25){ //print progress evert 25%
+                        showprogress(progressindex * 25);
                         ++progressindex;
                     }
                     bzero(buffer, sizeof(buffer));//clear buffer for next loop
@@ -129,7 +126,8 @@ int main(int argc, char const *argv[])
                 t2 = clock();
                 showprogress(100);
                 double elapsed = ((double)t2 - t1) / CLOCKS_PER_SEC * 1000;
-                printf(" total transfer time : %f ms",elapsed );
+                printf("total transfer time : %f ms\n",elapsed);
+                printf("file size : %f MB \n",filesizeMB);
             }
 
             close(socketd);//close socket and end file transfering
@@ -140,11 +138,16 @@ int main(int argc, char const *argv[])
 
     }
     else if (strcmp(argv[1], "udp") == 0){
+
+        socketd = socket(PF_INET,SOCK_DGRAM,0); // construct socket in IPv4 form with UDP protocol
+        if(socketd < 0)
+            errormsg("fail to open a new socket");
+
         if(strcmp(argv[2], "recv") == 0){
-            printf("udp recv\n");
+            printf("udp recv mode\n");
         }
         else if(strcmp(argv[2], "send") == 0){
-            printf("udp send\n");
+            printf("udp send mode \n");
         }
         else{
             errormsg("invalid mode");
