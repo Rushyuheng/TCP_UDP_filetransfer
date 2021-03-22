@@ -13,6 +13,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 
+#define BUFFER_SIZE 256
 
 void errormsg(const char * msg){
     perror(msg);
@@ -30,7 +31,7 @@ void showprogress(int percent){
 int main(int argc, char const *argv[])
 {
     int socketd, newsocketd;               // return value when opening new scoket for checking socket construction status
-    char buffer[256];                       // data buffer for reading data
+    char buffer[BUFFER_SIZE];                       // data buffer for reading data
     struct sockaddr_in serv_addr, cli_addr; //socket structure defined in <netinet/in.h>
     socklen_t clilen;                       // client length for accept()
     int portnum,rw_status;
@@ -60,15 +61,15 @@ int main(int argc, char const *argv[])
             if(newsocketd < 0)
                 errormsg("fail to accept socket from client");
 
-            //----The code we should revise----
+            //file transfer
             FILE *fp = fopen("recv.txt", "w");
             if(fp == NULL)
                 errormsg("fail to open write file");
 
             else{
-                bzero(buffer,256); // clear buffer perpare to recv data from socket
+                bzero(buffer,BUFFER_SIZE); // clear buffer perpare to recv data from socket
                 int length = 0;
-                while(length = recv(newsocketd, buffer, 256, 0)){ // recv data from socket
+                while(length = recv(newsocketd, buffer, BUFFER_SIZE, 0)){ // recv data from socket
                         if (length < 0)
                             errormsg("fail to recv data from socket");
 
@@ -76,7 +77,7 @@ int main(int argc, char const *argv[])
                         if(write_length < length)
                             errormsg("fail to write data from recv buffer to file");
 
-                        bzero(buffer, 256);//clear buffer for next loop
+                        bzero(buffer, BUFFER_SIZE);//clear buffer for next loop
                 } 
             }
             printf("file receive complete\n");
@@ -91,12 +92,12 @@ int main(int argc, char const *argv[])
             if (connect(socketd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) //try to connect to server socket
                 errormsg("fail to connect socket");
 
-            FILE *fp = fopen(argv[5],"r"); //open file and creat file pointer
+            FILE *fp = fopen(argv[5],"r"); //open file to be sent and create file pointer
             if(fp == NULL)
                 errormsg("fail to open file");
             
             else{
-                bzero(buffer,256); // clear buffer
+                bzero(buffer,BUFFER_SIZE); // clear buffer
                 int file_block_length = 0;
                 int sended_block_length = 0;
 
@@ -111,7 +112,7 @@ int main(int argc, char const *argv[])
                 showprogress(0);//print time and progress
 
                 t1 = clock();
-                while( (file_block_length = fread(buffer, sizeof(char), 256, fp)) > 0){//read file into buffer
+                while( (file_block_length = fread(buffer, sizeof(char), BUFFER_SIZE, fp)) > 0){//read file into buffer
                     if (send(socketd, buffer, file_block_length, 0) < 0)// send file to socket
                         errormsg("fail to send file");
                     
@@ -122,14 +123,14 @@ int main(int argc, char const *argv[])
                     }
                     bzero(buffer, sizeof(buffer));//clear buffer for next loop
                 }
-                fclose(fp);
+
                 t2 = clock();
                 showprogress(100);
                 double elapsed = ((double)t2 - t1) / CLOCKS_PER_SEC * 1000;
                 printf("total transfer time : %f ms\n",elapsed);
                 printf("file size : %f MB \n",filesizeMB);
             }
-
+            fclose(fp);
             close(socketd);//close socket and end file transfering
         }
         else{
@@ -143,11 +144,104 @@ int main(int argc, char const *argv[])
         if(socketd < 0)
             errormsg("fail to open a new socket");
 
-        if(strcmp(argv[2], "recv") == 0){
+        if(strcmp(argv[2], "recv") == 0){ //server side
             printf("udp recv mode\n");
+
+            if (bind(socketd, (struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0)// bind socket and server
+                errormsg("fail to bind socket and server address");
+
+            socklen_t clilen = sizeof(cli_addr);
+            clock_t t1,t2;
+            double idle_elapsed;
+
+            FILE *fp = fopen("recv.txt", "w");//prepare to write file
+            if(fp == NULL)
+                errormsg("fail to open write file");
+
+            while(1){
+                int length = 0;
+                double timeout_timer = 0.0;
+
+                length = recvfrom(socketd,buffer,BUFFER_SIZE, 0,(struct sockaddr *)&cli_addr, &clilen);
+                if(length < 0)
+                    errormsg("fail to recv data from socket");
+                else if(length > 0){
+                    t1 = clock();//update last recv time
+                    int write_length = fwrite(buffer, sizeof(char), length, fp);//write buffer to file
+                    if(write_length < length)
+                        errormsg("fail to write data from recv buffer to file");
+                    bzero(buffer, BUFFER_SIZE);//clear buffer for next loop
+                }
+
+                t2 = clock();
+                idle_elapsed = ((double)t2 - t1) / CLOCKS_PER_SEC; // calculate how long socket recv nothing
+                printf("%f\n",idle_elapsed);
+                if(idle_elapsed > 5){ // 5 sec of idle will cause timeout
+                    printf("socket timeout, socket close");
+                    break;
+                }
+
+            }
+
+            // close socket and file pointer
+            fclose(fp);
+            close(socketd);
+
         }
         else if(strcmp(argv[2], "send") == 0){
             printf("udp send mode \n");
+            FILE *fp = fopen(argv[5],"r"); //open file to be sent and create file pointer
+            if(fp == NULL)
+                errormsg("fail to open file");
+
+            else{
+                bzero(buffer,BUFFER_SIZE); // clear buffer
+                int file_block_length = 0;
+                int sended_block_length = 0;
+
+                struct stat send_st; //get file size from system
+                stat(argv[5], &send_st);
+                float send_filesize = send_st.st_size;
+                float send_filesizeMB = send_filesize / 1024.0 / 1024.0; // byte to MB
+
+                int progressindex = 1;
+                clock_t t1, t2;
+
+                showprogress(0);//print time and progress
+
+                t1 = clock();
+                while( (file_block_length = fread(buffer, sizeof(char), BUFFER_SIZE, fp)) > 0){//read file into buffer
+                    if (sendto(socketd, buffer,file_block_length, 0,(struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)// send file to socket
+                        errormsg("fail to send file");
+                    
+                    sended_block_length += file_block_length;//accumulate data sent
+                    if(sended_block_length / send_filesize > progressindex * 0.25){ //print progress evert 25%
+                        showprogress(progressindex * 25);
+                        ++progressindex;
+                    }
+                    bzero(buffer, sizeof(buffer));//clear buffer for next loop
+                }
+
+                t2 = clock();
+                showprogress(100);
+                double elapsed = ((double)t2 - t1) / CLOCKS_PER_SEC * 1000;
+                printf("total transfer time : %f ms\n",elapsed);
+                printf("file size : %f MB \n",send_filesizeMB);
+                printf("calculating packet loss...\n");
+                sleep(6);// wait 6 sec until server close file pointer
+
+                struct stat recv_st; //get file size from system
+                stat("recv.txt", &recv_st);
+                float recv_filesize = recv_st.st_size;
+                float packet_loss = (send_filesize - recv_filesize) / send_filesize;
+                printf("packet loss : %f %%\n",packet_loss);
+
+                // close socket and file pointer
+                fclose(fp);
+                close(socketd);
+            }
+
+
         }
         else{
             errormsg("invalid mode");
