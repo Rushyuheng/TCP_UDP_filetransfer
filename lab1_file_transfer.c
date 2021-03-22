@@ -12,6 +12,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <arpa/inet.h>
+#include <errno.h>
 
 #define BUFFER_SIZE 256
 
@@ -150,38 +151,40 @@ int main(int argc, char const *argv[])
             if (bind(socketd, (struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0)// bind socket and server
                 errormsg("fail to bind socket and server address");
 
+            struct timeval timeOut;//set recv timer for socket
+            timeOut.tv_sec = 5;// 5 sec timeout
+            timeOut.tv_usec = 0;
+            if (setsockopt(socketd, SOL_SOCKET, SO_RCVTIMEO, &timeOut, sizeof(timeOut)) < 0)
+                errormsg("fail to set socket recv timeout timer\n");
+
+
             socklen_t clilen = sizeof(cli_addr);
-            clock_t t1,t2;
-            double idle_elapsed;
+            int length = 0;
 
             FILE *fp = fopen("recv.txt", "w");//prepare to write file
             if(fp == NULL)
                 errormsg("fail to open write file");
 
             while(1){
-                int length = 0;
-                double timeout_timer = 0.0;
+                length = 0;
 
                 length = recvfrom(socketd,buffer,BUFFER_SIZE, 0,(struct sockaddr *)&cli_addr, &clilen);
-                if(length < 0)
-                    errormsg("fail to recv data from socket");
+                if(length < 0){
+                    if(errno == EAGAIN){
+                        printf("socket reach time limit : %ld sec ,socket closed\n",timeOut.tv_sec);
+                        break;
+                    }
+                    else
+                        errormsg("fail to recv data from socket");
+                }
                 else if(length > 0){
-                    t1 = clock();//update last recv time
                     int write_length = fwrite(buffer, sizeof(char), length, fp);//write buffer to file
                     if(write_length < length)
                         errormsg("fail to write data from recv buffer to file");
                     bzero(buffer, BUFFER_SIZE);//clear buffer for next loop
                 }
-
-                t2 = clock();
-                idle_elapsed = ((double)t2 - t1) / CLOCKS_PER_SEC; // calculate how long socket recv nothing
-                printf("%f\n",idle_elapsed);
-                if(idle_elapsed > 5){ // 5 sec of idle will cause timeout
-                    printf("socket timeout, socket close");
-                    break;
-                }
-
             }
+            printf("file receive complete\n");
 
             // close socket and file pointer
             fclose(fp);
@@ -233,6 +236,7 @@ int main(int argc, char const *argv[])
                 struct stat recv_st; //get file size from system
                 stat("recv.txt", &recv_st);
                 float recv_filesize = recv_st.st_size;
+                printf("recv size %f\n", recv_filesize);
                 float packet_loss = (send_filesize - recv_filesize) / send_filesize;
                 printf("packet loss : %f %%\n",packet_loss);
 
