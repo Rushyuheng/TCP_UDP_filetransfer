@@ -1,8 +1,10 @@
 # TCP/UDP file transfer
 ###### tags: `assigment` `junior` `net`
 
+[![hackmd-github-sync-badge](https://hackmd.io/OQsTYFjURxSMLSGrFN0yJA/badge)](https://hackmd.io/OQsTYFjURxSMLSGrFN0yJA)
+
 ## Intro
-This is a practice of socket programming, the goal is to write "one program" that have 4 mode, TCP send, TCP recv, UDP send, UDP recv.  
+This is a practice and learning note of socket programming, the goal is to write "one program" that have 4 mode, TCP send, TCP recv, UDP send, UDP recv.  
 
 Command should be the following form
 ```shell=
